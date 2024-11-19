@@ -34,7 +34,7 @@ NVCC_FLAGS = -I../cutlass/include -I../cutlass/tools/util/include $(OPT_FLAGS) $
 HOST_FLAGS = -std=c++17 -Wall
 
 # Linker Flags (if needed)
-LDFLAGS = 
+LDFLAGS = -lcublas 
 
 # Build Rules
 all: $(BUILD_DIR)/$(TARGET)
