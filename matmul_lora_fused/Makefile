@@ -19,7 +19,7 @@ OBJS = $(SRCS:%.cu=$(BUILD_DIR)/%.o)
 ARCH = sm_86
 
 # Optimization Flags
-OPT_FLAGS = -O3 --use_fast_math --ftz=true --prec-div=false --maxrregcount=32
+OPT_FLAGS = -O3 --use_fast_math --ftz=true --prec-div=false
 
 # Debugging and Profiling Flags (comment out in production)
 # DEBUG_FLAGS = -G -lineinfo
