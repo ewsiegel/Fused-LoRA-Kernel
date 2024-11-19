@@ -4,7 +4,7 @@
 NVCC = nvcc
 
 # Target Executable
-TARGET = matmul_mixed_precision
+TARGET = matmul_full_rank
 
 # Build Directory
 BUILD_DIR = build
@@ -28,7 +28,7 @@ OPT_FLAGS = -O3 --use_fast_math --ftz=true --prec-div=false --maxrregcount=32
 GENCODE_FLAGS = 
 
 # Default Flags
-NVCC_FLAGS = $(OPT_FLAGS) $(GENCODE_FLAGS) -Xptxas -v -arch=$(ARCH)
+NVCC_FLAGS = -I../cutlass/include -I../cutlass/tools/util/include $(OPT_FLAGS) $(GENCODE_FLAGS) -Xptxas -v -arch=$(ARCH)
 
 # Host Compiler Options
 HOST_FLAGS = -std=c++17 -Wall
