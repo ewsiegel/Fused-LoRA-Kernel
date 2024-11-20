@@ -13,7 +13,7 @@
 #include <string>
 
 #define EPSILON 1e-2  // Adjusted for FP16 precision
-#define CORRECTNESS false
+#define CORRECTNESS true
 
 // Structure to define matrix dimensions
 struct Dimensions {
