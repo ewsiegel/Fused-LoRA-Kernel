@@ -71,6 +71,21 @@ __global__ void fused_sequential_kernel(
     ElementCompute* shared_u = reinterpret_cast<ElementCompute*>(shared_mem + warp_shared_mem_offset + shared_u_offset);
     ElementInput* shared_u_half = reinterpret_cast<ElementInput*>(shared_mem + warp_shared_mem_offset + shared_u_half_offset);
 
+    // Compute W x
+    fragment<matrix_a, M, K, K, ElementInput, LayoutA> frag_Wx_A;
+    fragment<matrix_b, K, N, K, ElementInput, LayoutB> frag_Wx_B;
+    fragment<accumulator, M, N, K, ElementCompute> frag_C;
+
+    fill_fragment(frag_C, 0.0f);
+
+    for (int k = 0; k < n; k += K) {
+        // Load W and x for computing W x
+        load_matrix_sync(frag_Wx_A, W_tile_ptr + k, n);
+        load_matrix_sync(frag_Wx_B, x_tile_ptr + k, b);
+
+        mma_sync(frag_C, frag_Wx_A, frag_Wx_B, frag_C);
+    }
+
     // Compute u = A x
     fragment<matrix_a, M, K, K, ElementInput, LayoutA> frag_Ax_A;
     fragment<matrix_b, K, N, K, ElementInput, LayoutB> frag_Ax_B;
@@ -107,21 +122,6 @@ __global__ void fused_sequential_kernel(
         load_matrix_sync(frag_Bu_B, shared_u_half + k, N);
 
         mma_sync(frag_v, frag_Bu_A, frag_Bu_B, frag_v);
-    }
-
-    // Compute W x
-    fragment<matrix_a, M, K, K, ElementInput, LayoutA> frag_Wx_A;
-    fragment<matrix_b, K, N, K, ElementInput, LayoutB> frag_Wx_B;
-    fragment<accumulator, M, N, K, ElementCompute> frag_C;
-
-    fill_fragment(frag_C, 0.0f);
-
-    for (int k = 0; k < n; k += K) {
-        // Load W and x for computing W x
-        load_matrix_sync(frag_Wx_A, W_tile_ptr + k, n);
-        load_matrix_sync(frag_Wx_B, x_tile_ptr + k, b);
-
-        mma_sync(frag_C, frag_Wx_A, frag_Wx_B, frag_C);
     }
 
     // Accumulate frag_C and frag_v
