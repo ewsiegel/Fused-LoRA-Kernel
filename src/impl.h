@@ -13,8 +13,8 @@ namespace cublas_reference {
     );
 }
 
-namespace fused_lora_sequential {
-    void launch_fused_lora_sequential(
+namespace fused_sequential {
+    void launch_fused_sequential(
         const __half* d_W,
         const __half* d_x,
         const __half* d_B,
@@ -37,11 +37,11 @@ struct CublasReference {
     }
 };
 
-struct FusedLoraSequential {
-    constexpr static char const* name = "fused_lora_sequential";
+struct FusedSequential {
+    constexpr static char const* name = "fused_sequential";
 
     static void run(const __half* d_W, const __half* d_x, const __half* d_B, const __half* d_A,
                     __half* d_y, const Dimensions& dims, void* workspace = nullptr) {
-        fused_lora_sequential::launch_fused_lora_sequential(d_W, d_x, d_B, d_A, d_y, dims);
+        fused_sequential::launch_fused_sequential(d_W, d_x, d_B, d_A, d_y, dims);
     }
 };
