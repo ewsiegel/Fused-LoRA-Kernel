@@ -1,5 +1,3 @@
-# Makefile for Optimized CUDA Programs with Output in build Directory
-
 # Compiler
 NVCC = nvcc
 
@@ -9,11 +7,14 @@ TARGET = matmul_lora_fused
 # Build Directory
 BUILD_DIR = build
 
+# Source Directory
+SRC_DIR = src
+
 # Source Files
-SRCS = $(wildcard *.cu)
+SRCS = $(wildcard $(SRC_DIR)/*.cu)
 
 # Object Files
-OBJS = $(SRCS:%.cu=$(BUILD_DIR)/%.o)
+OBJS = $(SRCS:$(SRC_DIR)/%.cu=$(BUILD_DIR)/%.o)
 
 # Compute Capability (adjust for your GPU architecture)
 ARCH = sm_86
@@ -28,7 +29,7 @@ OPT_FLAGS = -O3 --use_fast_math --ftz=true --prec-div=false
 GENCODE_FLAGS = 
 
 # Default Flags
-NVCC_FLAGS = -I../cutlass/include -I../cutlass/tools/util/include $(OPT_FLAGS) $(GENCODE_FLAGS) -Xptxas -v -arch=$(ARCH)
+NVCC_FLAGS = -I./cutlass/include -I./cutlass/tools/util/include $(OPT_FLAGS) $(GENCODE_FLAGS) -Xptxas -v -arch=$(ARCH)
 
 # Host Compiler Options
 HOST_FLAGS = -std=c++17 -Wall
@@ -43,7 +44,7 @@ $(BUILD_DIR)/$(TARGET): $(OBJS)
 	@mkdir -p $(BUILD_DIR)
 	$(NVCC) $(NVCC_FLAGS) $(LDFLAGS) -o $@ $^
 
-$(BUILD_DIR)/%.o: %.cu
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cu
 	@mkdir -p $(BUILD_DIR)
 	$(NVCC) $(NVCC_FLAGS) -Xcompiler "$(HOST_FLAGS)" -c $< -o $@
 
