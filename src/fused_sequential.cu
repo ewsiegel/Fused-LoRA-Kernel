@@ -41,10 +41,6 @@ __global__ void fused_sequential_kernel(
     // Allocate shared memory
     extern __shared__ char shared_mem[];
     half* shared_u = reinterpret_cast<half*>(shared_mem);
-    for(int i = threadIdx.x % 32; i < r * WMMA_N; i += 32){
-        shared_u[i] = __float2half(0.0f);
-    }
-    __syncthreads();
 
     // Compute v = Wx
     fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Wx_A;
@@ -88,11 +84,9 @@ __global__ void fused_sequential_kernel(
             load_matrix_sync(frag_Ax_B, x_tile_ptr, n);
 
             mma_sync(frag_Ax_C, frag_Ax_A, frag_Ax_B, frag_Ax_C);
-            store_matrix_sync(shared_u + row, frag_Ax_C, r, mem_col_major);
         }
+        store_matrix_sync(shared_u + row, frag_Ax_C, r, mem_col_major);
     }
-
-    __syncthreads();
 
     // Compute y = v + Bu
     fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Bu_A;
