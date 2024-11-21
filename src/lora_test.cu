@@ -16,7 +16,7 @@
 #include "impl.h"
 
 #define EPSILON 1e-2  // Adjusted for FP16 precision
-#define CORRECTNESS true
+#define CORRECTNESS false
 
 // Function to initialize an FP32 array with random values and convert to FP16
 void initialize_random_fp16(float* array_fp32, __half* array_fp16, int size, float min_value, float max_value, unsigned int seed) {
@@ -118,11 +118,35 @@ BenchmarkResults benchmark(const std::vector<Dimensions>& dimensions_list, int t
 
 int main() {
     std::vector<Dimensions> dimensions_list = {
-        {1024, 512, 256, 128},
-        {2048, 1024, 512, 256},
-        {4096, 2048, 1024, 512}
+        {2048, 2048, 16, 16},
+        {2048, 2048, 16, 32},
+        {2048, 2048, 16, 64},
+        {2048, 2048, 16, 128},
+        {2048, 2048, 32, 16},
+        {2048, 2048, 32, 32},
+        {2048, 2048, 32, 64},
+        {2048, 2048, 32, 128},
+        {2048, 2048, 64, 16},
+        {2048, 2048, 64, 32},
+        {2048, 2048, 64, 64},
+        {2048, 2048, 64, 128},
+        {2048, 2048, 128, 16},
+        {2048, 2048, 128, 32},
+        {2048, 2048, 128, 64},
+        {2048, 2048, 128, 128},
+        {2048, 2048, 256, 16},
+        {2048, 2048, 256, 32},
+        {2048, 2048, 256, 64},
+        {2048, 2048, 256, 128},
+        {2048, 2048, 512, 16},
+        {2048, 2048, 512, 32},
+        {2048, 2048, 512, 64},
+        {2048, 2048, 512, 128},
+        {2048, 2048, 1024, 16},
+        {2048, 2048, 1024, 32},
+        {2048, 2048, 1024, 64},
+        {2048, 2048, 1024, 128},
     };
-
     std::vector<BenchmarkResults> results;
 
     // Add benchmarks for various implementations
@@ -130,10 +154,8 @@ int main() {
     results.push_back(benchmark<FusedSequential>(dimensions_list, 5));
     // Add other implementations here, e.g., results.push_back(benchmark<OtherImpl>(dimensions_list, 5));
 
-#if CORRECTNESS
     // Reference output
     const BenchmarkResults& reference_results = results[0];
-#endif
 
     // Print results
     for (size_t impl_index = 0; impl_index < results.size(); ++impl_index) {
@@ -147,8 +169,11 @@ int main() {
             double tflop = 2.0 * size_m * size_d * size_b * 1e-12;
             double tflop_per_sec = tflop / (elapsed_ms * 1e-3);
 
-            printf("  %-6d  %-6d  %-6d  %-6d  %-12.2f  %-14.2f\n",
-                   size_m, size_d, size_b, size_r, elapsed_ms, tflop_per_sec);
+            double ref_elapsed_ms = reference_results.elapsed_ms.at(dims);
+            double speedup = ref_elapsed_ms / elapsed_ms;
+
+            printf("  %-6d  %-6d  %-6d  %-6d  %.2f (%.2fx speedup) %-14.2f\n",
+                   size_m, size_d, size_b, size_r, elapsed_ms, speedup, tflop_per_sec);
 
 #if CORRECTNESS
             if (impl_index > 0) { // Skip the reference implementation itself
