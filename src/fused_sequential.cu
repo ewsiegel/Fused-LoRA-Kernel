@@ -58,8 +58,8 @@ __global__ void fused_sequential_kernel(
         int x_row = k;
         int x_col = col_start;
 
-        const ElementInput* W_tile_ptr = W + k * m + row_start;//W + w_row * n + w_col;
-        const ElementInput* x_tile_ptr = x + x_row * b + x_col;
+        const ElementInput* W_tile_ptr = W + w_col * m + w_row;
+        const ElementInput* x_tile_ptr = x + x_col * n + x_row;
 
         load_matrix_sync(frag_Wx_A, W_tile_ptr, m);
         load_matrix_sync(frag_Wx_B, x_tile_ptr, n);
@@ -81,14 +81,14 @@ __global__ void fused_sequential_kernel(
             int x_row = k;
             int x_col = col_start;
 
-            const ElementInput* A_tile_ptr = A + a_row * n + a_col;
-            const ElementInput* x_tile_ptr = x + x_row * b + x_col;
+            const ElementInput* A_tile_ptr = A + a_col * r + a_row;
+            const ElementInput* x_tile_ptr = x + x_col * n + x_row;
 
             load_matrix_sync(frag_Ax_A, A_tile_ptr, r);
             load_matrix_sync(frag_Ax_B, x_tile_ptr, n);
 
             mma_sync(frag_Ax_C, frag_Ax_A, frag_Ax_B, frag_Ax_C);
-            store_matrix_sync(shared_u + row * WMMA_N, frag_Ax_C, r, mem_col_major);
+            store_matrix_sync(shared_u + row, frag_Ax_C, r, mem_col_major);
         }
     }
 
@@ -104,8 +104,8 @@ __global__ void fused_sequential_kernel(
         int u_row = k;
         int u_col = 0;
 
-        const ElementInput* B_tile_ptr = B + b_row * r + b_col;
-        const half* u_tile_ptr = shared_u + u_row * WMMA_N + u_col;
+        const ElementInput* B_tile_ptr = B + b_col * m + b_row;
+        const half* u_tile_ptr = shared_u + u_col * r + u_row;
 
         load_matrix_sync(frag_Bu_A, B_tile_ptr, m);
         load_matrix_sync(frag_Bu_B, u_tile_ptr, r);
@@ -114,8 +114,8 @@ __global__ void fused_sequential_kernel(
     }
 
     // Store the result to Y manually, converting from float to half
-    ElementOutput* Y_tile_ptr = Y + row_start * b + col_start;
-    store_matrix_sync(Y_tile_ptr, frag_Wx_C, b, mem_col_major);
+    ElementOutput* Y_tile_ptr = Y + col_start * m + row_start;
+    store_matrix_sync(Y_tile_ptr, frag_Wx_C, m, mem_col_major);
 
 }
 
