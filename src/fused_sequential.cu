@@ -42,27 +42,11 @@ __global__ void fused_sequential_kernel(
     extern __shared__ char shared_mem[];
     half* shared_u = reinterpret_cast<half*>(shared_mem);
 
-    // Compute v = Wx
+    // setup v = Wx
     fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Wx_A;
     fragment<matrix_b, WMMA_K, WMMA_N, WMMA_K, ElementInput, LayoutB> frag_Wx_B;
     fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Wx_C;
     fill_fragment(frag_Wx_C, 0.0f);
-
-    for(int k = 0; k < n; k += WMMA_K){
-        int w_row = row_start;
-        int w_col = k;
-        int x_row = k;
-        int x_col = col_start;
-
-        const ElementInput* W_tile_ptr = W + w_col * m + w_row;
-        const ElementInput* x_tile_ptr = x + x_col * n + x_row;
-
-        load_matrix_sync(frag_Wx_A, W_tile_ptr, m);
-        load_matrix_sync(frag_Wx_B, x_tile_ptr, n);
-
-        //fill_fragment(frag_Wx_C, 0.0f);
-        mma_sync(frag_Wx_C, frag_Wx_A, frag_Wx_B, frag_Wx_C);
-    }
 
     // Fragments for A and x
     fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Ax_A;
@@ -72,6 +56,22 @@ __global__ void fused_sequential_kernel(
     for(int row = 0; row < r; row += WMMA_M){
         fill_fragment(frag_Ax_C, 0.0f);
         for(int k = 0; k < n; k += WMMA_K){
+            if (row == 0) {
+                // compute v = Wx
+                // inside this loop to reuse more of x
+                int w_row = row_start;
+                int w_col = k;
+                int x_row = k;
+                int x_col = col_start;
+
+                const ElementInput* W_tile_ptr = W + w_col * m + w_row;
+                const ElementInput* x_tile_ptr = x + x_col * n + x_row;
+
+                load_matrix_sync(frag_Wx_A, W_tile_ptr, m);
+                load_matrix_sync(frag_Wx_B, x_tile_ptr, n);
+
+                mma_sync(frag_Wx_C, frag_Wx_A, frag_Wx_B, frag_Wx_C);
+            }
             int a_row = row;
             int a_col = k;
             int x_row = k;
