@@ -68,7 +68,6 @@ __global__ void fused_concurrent_kernel(
 
             mma_sync(frag_Wx_C, frag_Wx_A, frag_Wx_B, frag_Wx_C);
         }
-        //storing/loading Wx not working for some reason
         //store_matrix_sync(shared_tmp, frag_Wx_C, WMMA_M, mem_col_major);
     } else {
         // Fragments for A and x
@@ -122,9 +121,9 @@ __global__ void fused_concurrent_kernel(
     __syncthreads();
 
     if (threadIdx.x < 32) {
+    //if (threadIdx.x >= 32) {
         fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Bu_C;
         load_matrix_sync(frag_Bu_C, shared_tmp, WMMA_M, mem_col_major);
-        //storing/loading Wx not working for some reason
         //fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Wx_C;
         //load_matrix_sync(frag_Wx_C, shared_tmp, WMMA_M, mem_col_major);
 
