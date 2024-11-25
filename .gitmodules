@@ -1,3 +1,6 @@
 [submodule "cutlass"]
 	path = cutlass
 	url = https://github.com/NVIDIA/cutlass
+[submodule "wmma_extension"]
+	path = wmma_extension
+	url = https://github.com/wmmae/wmma_extension/

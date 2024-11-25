@@ -24,6 +24,17 @@ namespace fused_sequential {
     );
 }
 
+namespace fused_concurrent {
+    void launch_fused_concurrent(
+        const __half* d_W,
+        const __half* d_x,
+        const __half* d_B,
+        const __half* d_A,
+        __half* d_y,
+        const Dimensions& dims
+    );
+}
+
 //////////////////////////////////////////
 // TODO ADD IMPLEMENTATION STRUCTS HERE //
 //////////////////////////////////////////
@@ -43,5 +54,14 @@ struct FusedSequential {
     static void run(const __half* d_W, const __half* d_x, const __half* d_B, const __half* d_A,
                     __half* d_y, const Dimensions& dims, void* workspace = nullptr) {
         fused_sequential::launch_fused_sequential(d_W, d_x, d_B, d_A, d_y, dims);
+    }
+};
+
+struct FusedConcurrent {
+    constexpr static char const* name = "fused_concurrent";
+
+    static void run(const __half* d_W, const __half* d_x, const __half* d_B, const __half* d_A,
+                    __half* d_y, const Dimensions& dims, void* workspace = nullptr) {
+        fused_concurrent::launch_fused_concurrent(d_W, d_x, d_B, d_A, d_y, dims);
     }
 };

@@ -268,6 +268,7 @@ int main() {
     // Add benchmarks for various implementations
     results.push_back(benchmark<CublasReference>(dimensions_list, 5));
     results.push_back(benchmark<FusedSequential>(dimensions_list, 5));
+    results.push_back(benchmark<FusedConcurrent>(dimensions_list, 5));
     // Add other implementations here, e.g., results.push_back(benchmark<OtherImpl>(dimensions_list, 5));
 
     // Reference output
