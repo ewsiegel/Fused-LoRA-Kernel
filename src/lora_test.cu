@@ -32,6 +32,7 @@ struct BenchmarkResults {
     char const* name;
     std::map<std::tuple<int32_t, int32_t, int32_t, int32_t>, __half*> outputs;
     std::map<std::tuple<int32_t, int32_t, int32_t, int32_t>, double> elapsed_ms;
+    std::map<std::tuple<int32_t, int32_t, int32_t, int32_t>, double> speedup;
 };
 
 // General benchmark function
@@ -277,7 +278,7 @@ int main() {
 
     // Print results
     for (size_t impl_index = 0; impl_index < results.size(); ++impl_index) {
-        const auto& result = results[impl_index];
+        auto& result = results[impl_index];
         std::cout << "Implementation: " << result.name << "\n";
         printf("  %-6s  %-6s  %-6s  %-6s  %-12s  %-14s\n", "size_m", "size_d", "size_b", "size_r", "elapsed_ms", "tflop_per_sec");
         printf("  %-6s  %-6s  %-6s  %-6s  %-12s  %-14s\n", "------", "------", "------", "------", "-----------", "--------------");
@@ -289,9 +290,10 @@ int main() {
 
             double ref_elapsed_ms = reference_results.elapsed_ms.at(dims);
             double speedup = ref_elapsed_ms / elapsed_ms;
+            result.speedup[dims] = speedup;
 
-            printf("  %-6d  %-6d  %-6d  %-6d  %.2f (%.2fx speedup vs ref) %-14.2f\n",
-                   size_m, size_d, size_b, size_r, elapsed_ms, speedup, tflop_per_sec);
+            printf("  %-6d  %-6d  %-6d  %-6d  %.2f %-14.2f\n",
+                   size_m, size_d, size_b, size_r, elapsed_ms, tflop_per_sec);
 
 #if CORRECTNESS
             if (impl_index > 0) { // Skip the reference implementation itself
@@ -328,6 +330,53 @@ int main() {
         }
 
         std::cout << std::endl;
+    }
+
+    // Print a summary table of speedups
+    std::cout << "Speedup Summary Table\n";
+    printf("  %-5s %-5s %-5s %-5s", "m", "d", "b", "r");
+
+    // Print implementation names as headers
+    for (const auto& result : results) {
+        printf(" %-12s", result.name);
+    }
+    printf(" %-15s\n", "Fastest Impl");
+
+    // Print separator line
+    printf("  %-5s %-5s %-5s %-5s", "---", "---", "---", "---");
+    for (size_t impl_index = 0; impl_index < results.size(); ++impl_index) {
+        printf(" %-12s", "------------");
+    }
+    printf(" %-15s\n", "---------------");
+
+    // Iterate through all problem sizes and print speedups
+    const auto& reference_dims = results[0].elapsed_ms; // Assume all results share the same problem sizes
+    for (const auto& [dims, _] : reference_dims) {
+        auto [size_m, size_d, size_b, size_r] = dims;
+        printf("  %-5d %-5d %-5d %-5d", size_m, size_d, size_b, size_r);
+
+        double fastest_time = 1e9;
+        const char* fastest_impl = "N/A";
+
+        // Print speedups for each implementation
+        for (const auto& result : results) {
+            if (result.elapsed_ms.find(dims) != result.elapsed_ms.end()) {
+                double elapsed = result.elapsed_ms.at(dims);
+                double speedup = reference_results.elapsed_ms.at(dims) / elapsed;
+                printf(" %-12.2f", speedup);
+
+                // Track the fastest implementation
+                if (elapsed < fastest_time) {
+                    fastest_time = elapsed;
+                    fastest_impl = result.name;
+                }
+            } else {
+                printf(" %-12s", "N/A");
+            }
+        }
+
+        // Print the fastest implementation
+        printf(" %-15s\n", fastest_impl);
     }
 
     // Free the stored outputs
