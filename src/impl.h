@@ -35,6 +35,17 @@ namespace fused_concurrent {
     );
 }
 
+namespace fused_concurrent_asymmetric {
+    void launch_fused_concurrent_asymmetric(
+        const __half* d_W,
+        const __half* d_x,
+        const __half* d_B,
+        const __half* d_A,
+        __half* d_y,
+        const Dimensions& dims
+    );
+}
+
 //////////////////////////////////////////
 // TODO ADD IMPLEMENTATION STRUCTS HERE //
 //////////////////////////////////////////
@@ -63,5 +74,14 @@ struct FusedConcurrent {
     static void run(const __half* d_W, const __half* d_x, const __half* d_B, const __half* d_A,
                     __half* d_y, const Dimensions& dims, void* workspace = nullptr) {
         fused_concurrent::launch_fused_concurrent(d_W, d_x, d_B, d_A, d_y, dims);
+    }
+};
+
+struct FusedConcurrentAsymmetric {
+    constexpr static char const* name = "fused_concurrent_asymmetric";
+
+    static void run(const __half* d_W, const __half* d_x, const __half* d_B, const __half* d_A,
+                    __half* d_y, const Dimensions& dims, void* workspace = nullptr) {
+        fused_concurrent_asymmetric::launch_fused_concurrent_asymmetric(d_W, d_x, d_B, d_A, d_y, dims);
     }
 };
