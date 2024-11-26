@@ -1,36 +1,32 @@
 #include <iostream>
 #include <cuda_runtime.h>
-#include <mma.h>  // For nvcuda::wmma
+#include <mma.h>
 #include <wmma_extension/operators.hpp>
 #include <cooperative_groups.h>
 
-#include "impl.h"  // Ensure this includes the correct Dimensions struct
+#include "impl.h"
 
 
 namespace cg = cooperative_groups;
 
 namespace fused_concurrent_asymmetric {
 
-using ElementInput = half;          // 'half' is equivalent to '__half'
+using ElementInput = half;
 using ElementOutput = half;
 using ElementCompute = half;
 
-// Use WMMA namespace
 using namespace nvcuda::wmma;
 
-// Define the matrix layouts as type aliases
 using LayoutA = col_major;
 using LayoutB = col_major;
 
-// Define the tile sizes (must be multiples of 16 for Tensor Cores)
 constexpr int WMMA_M = 16;
 constexpr int WMMA_N = 16;
 constexpr int WMMA_K = 16;
 
 constexpr int LORA_BLOCKS_M = 16;
-constexpr int LORA_BLOCKS_B = 16;
+constexpr int LORA_BLOCKS_B = 8;
 
-// Kernel using WMMA Tensor Cores
 __global__ void fused_concurrent_asymmetric_kernel(
     const ElementInput* __restrict__ W,  // [m x n]
     const ElementInput* __restrict__ x,  // [n x b]
@@ -40,14 +36,12 @@ __global__ void fused_concurrent_asymmetric_kernel(
     int m, int n, int b, int r,
     half *shared_tmp) {
 
-    // Using WMMA namespace inside the kernel
     using namespace nvcuda::wmma;
 
     cg::grid_group grid = cg::this_grid();
 
-    // Coordinates for the output tile
-    int row_start = (blockIdx.x / (b/WMMA_N)) * WMMA_M;//tile_row * WMMA_M;
-    int col_start = (blockIdx.x % (b/WMMA_N)) * WMMA_N;//tile_col * WMMA_N;
+    int row_start = (blockIdx.x / (b/WMMA_N)) * WMMA_M;
+    int col_start = (blockIdx.x % (b/WMMA_N)) * WMMA_N;
 
     // Allocate shared memory
     extern __shared__ char shared_mem[];
@@ -65,7 +59,6 @@ __global__ void fused_concurrent_asymmetric_kernel(
         fill_fragment(frag_Wx_C, 0.0f);
         for(int k = 0; k < n; k += WMMA_K){
             // compute v = Wx
-            // inside this loop to reuse more of x
             int w_row = row_start;
             int w_col = k;
             int x_row = k;
@@ -79,7 +72,6 @@ __global__ void fused_concurrent_asymmetric_kernel(
 
             mma_sync(frag_Wx_C, frag_Wx_A, frag_Wx_B, frag_Wx_C);
         }
-        //store_matrix_sync(shared_tmp, frag_Wx_C, WMMA_M, mem_col_major);
     } else {
         int splits_b = max(16, b / LORA_BLOCKS_B);
         int start_b = ((blockIdx.x - lora_block_start) / LORA_BLOCKS_M) * splits_b;
@@ -145,11 +137,8 @@ __global__ void fused_concurrent_asymmetric_kernel(
     grid.sync();
 
     if (blockIdx.x < lora_block_start) {
-    //if (threadIdx.x < LORA_BLOCKS) {
         fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Bu_C;
         load_matrix_sync(frag_Bu_C, shared_tmp + col_start * m + row_start, m, mem_col_major);
-        //fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Wx_C;
-        //load_matrix_sync(frag_Wx_C, shared_tmp, WMMA_M, mem_col_major);
 
         // accumulate
         frag_Wx_C = frag_Wx_C + frag_Bu_C;
@@ -163,7 +152,7 @@ __global__ void fused_concurrent_asymmetric_kernel(
 void launch_fused_concurrent_asymmetric(
     const __half* d_W, const __half* d_x,
     const __half* d_B, const __half* d_A,
-    __half* d_Y, const Dimensions& dims) {
+    __half* d_Y, const Dimensions& dims, __half* d_tmp) {
 
     int m = dims.size_m;
     int n = dims.size_d;
@@ -183,18 +172,6 @@ void launch_fused_concurrent_asymmetric(
         exit(EXIT_FAILURE);
     }
 
-    half *d_tmp;
-    cudaMalloc(&d_tmp, m * b * sizeof(half));
-
-    // Launch the kernel
-    //fused_concurrent_asymmetric_kernel<<<gridSize, threads_per_block, shared_mem_size>>>(
-    //    d_W,
-    //    d_x,
-    //    d_B,
-    //    d_A,
-    //    d_Y,
-    //    m, n, b, r, d_tmp);
-
     void* kernelArgs[] = {
         &d_W,
         &d_x,
@@ -203,8 +180,6 @@ void launch_fused_concurrent_asymmetric(
         &d_Y,
         &m, &n, &b, &r, &d_tmp
     };
-
-    //printf("m %d n %d b %d r %d gridSize %d\n", m, n, b, r, m / WMMA_M * b / WMMA_N + LORA_BLOCKS);
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void*)fused_concurrent_asymmetric_kernel,
@@ -220,15 +195,6 @@ void launch_fused_concurrent_asymmetric(
         exit(EXIT_FAILURE);
     }
 
-    cudaDeviceSynchronize();
-    cudaFree(d_tmp);
-
-    // Synchronize to catch errors
-    err = cudaDeviceSynchronize();
-    if(err != cudaSuccess){
-        std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl;
-        exit(EXIT_FAILURE);
-    }
 }
 
 } // namespace fused_concurrent_asymmetric

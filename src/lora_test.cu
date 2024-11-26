@@ -65,12 +65,13 @@ BenchmarkResults benchmark(const std::vector<Dimensions>& dimensions_list, int t
         initialize_random_fp16(h_A_fp32, h_A, dims.size_r * dims.size_d, -1.0f, 1.0f, seed);
         initialize_random_fp16(h_x_fp32, h_x, dims.size_d * dims.size_b, -1.0f, 1.0f, seed);
 
-        __half *d_W, *d_B, *d_A, *d_x, *d_y;
+        __half *d_W, *d_B, *d_A, *d_x, *d_y, *d_tmp;
         cudaMalloc(&d_W, size_W);
         cudaMalloc(&d_B, size_B);
         cudaMalloc(&d_A, size_A);
         cudaMalloc(&d_x, size_x);
         cudaMalloc(&d_y, size_y);
+        cudaMalloc(&d_tmp, Impl::get_workspace_size(dims.size_m, dims.size_d, dims.size_b, dims.size_r));
 
         cudaMemcpy(d_W, h_W, size_W, cudaMemcpyHostToDevice);
         cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);
@@ -81,7 +82,7 @@ BenchmarkResults benchmark(const std::vector<Dimensions>& dimensions_list, int t
 
         for (int i = 0; i < trials; ++i) {
             auto start = std::chrono::high_resolution_clock::now();
-            Impl::run(d_W, d_x, d_B, d_A, d_y, dims);  // Call the templated LoRA implementation
+            Impl::run(d_W, d_x, d_B, d_A, d_y, dims, d_tmp);  // Call the templated LoRA implementation
             cudaDeviceSynchronize();
             auto end = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double, std::milli> elapsed = end - start;
@@ -103,6 +104,7 @@ BenchmarkResults benchmark(const std::vector<Dimensions>& dimensions_list, int t
         cudaFree(d_A);
         cudaFree(d_x);
         cudaFree(d_y);
+        cudaFree(d_tmp);
         free(h_W_fp32);
         free(h_B_fp32);
         free(h_A_fp32);

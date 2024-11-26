@@ -1,29 +1,25 @@
 #include <iostream>
 #include <cuda_runtime.h>
-#include <mma.h>  // For nvcuda::wmma
+#include <mma.h>
 #include <wmma_extension/operators.hpp>
 
-#include "impl.h"  // Ensure this includes the correct Dimensions struct
+#include "impl.h"
 
 namespace fused_sequential {
 
-using ElementInput = half;          // 'half' is equivalent to '__half'
+using ElementInput = half;
 using ElementOutput = half;
 using ElementCompute = half;
 
-// Use WMMA namespace
 using namespace nvcuda::wmma;
 
-// Define the matrix layouts as type aliases
 using LayoutA = col_major;
 using LayoutB = col_major;
 
-// Define the tile sizes (must be multiples of 16 for Tensor Cores)
 constexpr int WMMA_M = 16;
 constexpr int WMMA_N = 16;
 constexpr int WMMA_K = 16;
 
-// Kernel using WMMA Tensor Cores
 __global__ void fused_sequential_kernel(
     const ElementInput* __restrict__ W,  // [m x n]
     const ElementInput* __restrict__ x,  // [n x b]
@@ -32,12 +28,10 @@ __global__ void fused_sequential_kernel(
     ElementOutput* __restrict__ Y,       // [m x b]
     int m, int n, int b, int r) {
 
-    // Using WMMA namespace inside the kernel
     using namespace nvcuda::wmma;
 
-    // Coordinates for the output tile
-    int row_start = blockIdx.x * WMMA_M;//tile_row * WMMA_M;
-    int col_start = blockIdx.y * WMMA_N;//tile_col * WMMA_N;
+    int row_start = blockIdx.x * WMMA_M;
+    int col_start = blockIdx.y * WMMA_N;
 
     // Allocate shared memory
     extern __shared__ char shared_mem[];
@@ -248,13 +242,6 @@ void launch_fused_sequential(
     cudaError_t err = cudaGetLastError();
     if(err != cudaSuccess){
         std::cerr << "Kernel launch failed: " << cudaGetErrorString(err) << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Synchronize to catch errors
-    err = cudaDeviceSynchronize();
-    if(err != cudaSuccess){
-        std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl;
         exit(EXIT_FAILURE);
     }
 }

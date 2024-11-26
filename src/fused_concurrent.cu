@@ -1,29 +1,25 @@
 #include <iostream>
 #include <cuda_runtime.h>
-#include <mma.h>  // For nvcuda::wmma
+#include <mma.h>
 #include <wmma_extension/operators.hpp>
 
-#include "impl.h"  // Ensure this includes the correct Dimensions struct
+#include "impl.h"
 
 namespace fused_concurrent {
 
-using ElementInput = half;          // 'half' is equivalent to '__half'
+using ElementInput = half;
 using ElementOutput = half;
 using ElementCompute = half;
 
-// Use WMMA namespace
 using namespace nvcuda::wmma;
 
-// Define the matrix layouts as type aliases
 using LayoutA = col_major;
 using LayoutB = col_major;
 
-// Define the tile sizes (must be multiples of 16 for Tensor Cores)
 constexpr int WMMA_M = 16;
 constexpr int WMMA_N = 16;
 constexpr int WMMA_K = 16;
 
-// Kernel using WMMA Tensor Cores
 __global__ void fused_concurrent_kernel(
     const ElementInput* __restrict__ W,  // [m x n]
     const ElementInput* __restrict__ x,  // [n x b]
@@ -32,14 +28,11 @@ __global__ void fused_concurrent_kernel(
     ElementOutput* __restrict__ Y,       // [m x b]
     int m, int n, int b, int r) {
 
-    // Using WMMA namespace inside the kernel
     using namespace nvcuda::wmma;
 
-    // Coordinates for the output tile
-    int row_start = blockIdx.x * WMMA_M;//tile_row * WMMA_M;
-    int col_start = blockIdx.y * WMMA_N;//tile_col * WMMA_N;
+    int row_start = blockIdx.x * WMMA_M;
+    int col_start = blockIdx.y * WMMA_N;
 
-    // Allocate shared memory
     extern __shared__ char shared_mem[];
     half* shared_u = reinterpret_cast<half*>(shared_mem);
     half* shared_tmp = reinterpret_cast<half*>(shared_mem + r * WMMA_N * sizeof(half));
@@ -54,7 +47,6 @@ __global__ void fused_concurrent_kernel(
         fill_fragment(frag_Wx_C, 0.0f);
         for(int k = 0; k < n; k += WMMA_K){
             // compute v = Wx
-            // inside this loop to reuse more of x
             int w_row = row_start;
             int w_col = k;
             int x_row = k;
@@ -68,7 +60,6 @@ __global__ void fused_concurrent_kernel(
 
             mma_sync(frag_Wx_C, frag_Wx_A, frag_Wx_B, frag_Wx_C);
         }
-        //store_matrix_sync(shared_tmp, frag_Wx_C, WMMA_M, mem_col_major);
     } else {
         // Fragments for A and x
         fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Ax_A;
@@ -114,18 +105,14 @@ __global__ void fused_concurrent_kernel(
             mma_sync(frag_Bu_C, frag_Bu_A, frag_Bu_B, frag_Bu_C);
         }
 
-        //TODO write frag_Bu_C to shmem
         store_matrix_sync(shared_tmp, frag_Bu_C, WMMA_M, mem_col_major);
     }
 
     __syncthreads();
 
     if (threadIdx.x < 32) {
-    //if (threadIdx.x >= 32) {
         fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Bu_C;
         load_matrix_sync(frag_Bu_C, shared_tmp, WMMA_M, mem_col_major);
-        //fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Wx_C;
-        //load_matrix_sync(frag_Wx_C, shared_tmp, WMMA_M, mem_col_major);
 
         // accumulate
         frag_Wx_C = frag_Wx_C + frag_Bu_C;
@@ -172,13 +159,6 @@ void launch_fused_concurrent(
     cudaError_t err = cudaGetLastError();
     if(err != cudaSuccess){
         std::cerr << "Kernel launch failed: " << cudaGetErrorString(err) << std::endl;
-        exit(EXIT_FAILURE);
-    }
-
-    // Synchronize to catch errors
-    err = cudaDeviceSynchronize();
-    if(err != cudaSuccess){
-        std::cerr << "CUDA Error: " << cudaGetErrorString(err) << std::endl;
         exit(EXIT_FAILURE);
     }
 }
