@@ -27,7 +27,8 @@ constexpr int WMMA_M = 16;
 constexpr int WMMA_N = 16;
 constexpr int WMMA_K = 16;
 
-constexpr int LORA_BLOCKS = 8;
+constexpr int LORA_BLOCKS_M = 16;
+constexpr int LORA_BLOCKS_B = 16;
 
 // Kernel using WMMA Tensor Cores
 __global__ void fused_concurrent_asymmetric_kernel(
@@ -55,7 +56,7 @@ __global__ void fused_concurrent_asymmetric_kernel(
     fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Wx_C;
     fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Bu_C;
 
-    int lora_block_start = gridDim.x - LORA_BLOCKS;
+    int lora_block_start = gridDim.x - LORA_BLOCKS_M*LORA_BLOCKS_B;
 
     // compute Wx
     if (blockIdx.x < lora_block_start) {
@@ -80,10 +81,15 @@ __global__ void fused_concurrent_asymmetric_kernel(
         }
         //store_matrix_sync(shared_tmp, frag_Wx_C, WMMA_M, mem_col_major);
     } else {
-        int splits = max(16, b / LORA_BLOCKS);
-        int start_b = (blockIdx.x - lora_block_start) * splits;
-        int end_b = start_b + splits;
+        int splits_b = max(16, b / LORA_BLOCKS_B);
+        int start_b = ((blockIdx.x - lora_block_start) / LORA_BLOCKS_M) * splits_b;
+        int end_b = start_b + splits_b;
         int stop_b = min(b, end_b);
+
+        int splits_m = max(16, m / LORA_BLOCKS_M);
+        int start_m = ((blockIdx.x - lora_block_start) % LORA_BLOCKS_M) * splits_m;
+        int end_m = start_m + splits_m;
+        int stop_m = min(m, end_m);
 
         for (int col = start_b; col < stop_b; col+=WMMA_N) {
             // Fragments for A and x
@@ -111,7 +117,7 @@ __global__ void fused_concurrent_asymmetric_kernel(
             }
 
             // Compute v = Bu
-            for (int row = 0; row < m; row += WMMA_M) {
+            for (int row = start_m; row < stop_m; row += WMMA_M) {
                 fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Bu_A;
                 fragment<matrix_b, WMMA_K, WMMA_N, WMMA_K, ElementInput, LayoutB> frag_Bu_B;
                 fill_fragment(frag_Bu_C, 0.0f);
@@ -165,7 +171,7 @@ void launch_fused_concurrent_asymmetric(
     int r = dims.size_r;
 
     int threads_per_block = 32;
-    dim3 gridSize(m / WMMA_M * b / WMMA_N + LORA_BLOCKS);
+    dim3 gridSize(m / WMMA_M * b / WMMA_N + LORA_BLOCKS_M*LORA_BLOCKS_B);
     size_t shared_mem_size = r * WMMA_N * sizeof(half);
 
     // Check shared memory size
