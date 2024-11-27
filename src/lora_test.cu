@@ -230,6 +230,7 @@ int main() {
     results.push_back(benchmark<FusedSequential>(dimensions_list, 5));
     results.push_back(benchmark<FusedConcurrent>(dimensions_list, 5));
     results.push_back(benchmark<FusedConcurrentAsymmetric>(dimensions_list, 5));
+    results.push_back(benchmark<FusedConcurrentAx>(dimensions_list, 5));
     // Add other implementations here, e.g., results.push_back(benchmark<OtherImpl>(dimensions_list, 5));
 
     // Reference output

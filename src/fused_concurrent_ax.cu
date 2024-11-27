@@ -9,7 +9,7 @@
 
 namespace cg = cooperative_groups;
 
-namespace fused_concurrent_asymmetric {
+namespace fused_concurrent_ax {
 
 using ElementInput = half;
 using ElementOutput = half;
@@ -24,7 +24,7 @@ constexpr int WMMA_M = 16;
 constexpr int WMMA_N = 16;
 constexpr int WMMA_K = 16;
 
-__global__ void fused_concurrent_asymmetric_kernel(
+__global__ void fused_concurrent_ax_kernel(
     const ElementInput* __restrict__ W,  // [m x n]
     const ElementInput* __restrict__ x,  // [n x b]
     const ElementInput* __restrict__ B,  // [m x r]
@@ -32,7 +32,7 @@ __global__ void fused_concurrent_asymmetric_kernel(
     ElementOutput* __restrict__ Y,       // [m x b]
     int m, int n, int b, int r,
     half *shared_tmp,
-    const int LORA_BLOCKS_M,
+    const int LORA_BLOCKS_R,
     const int LORA_BLOCKS_B) {
 
     using namespace nvcuda::wmma;
@@ -42,14 +42,9 @@ __global__ void fused_concurrent_asymmetric_kernel(
     int row_start = (blockIdx.x / (b/WMMA_N)) * WMMA_M;
     int col_start = (blockIdx.x % (b/WMMA_N)) * WMMA_N;
 
-    // Allocate shared memory
-    extern __shared__ char shared_mem[];
-    half* shared_u = reinterpret_cast<half*>(shared_mem);
-
     fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Wx_C;
-    fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Bu_C;
 
-    int lora_block_start = gridDim.x - LORA_BLOCKS_M*LORA_BLOCKS_B;
+    int lora_block_start = gridDim.x - LORA_BLOCKS_R*LORA_BLOCKS_B;
 
     // compute Wx
     if (blockIdx.x < lora_block_start) {
@@ -73,14 +68,14 @@ __global__ void fused_concurrent_asymmetric_kernel(
         }
     } else {
         int splits_b = max(16, b / LORA_BLOCKS_B);
-        int start_b = ((blockIdx.x - lora_block_start) / LORA_BLOCKS_M) * splits_b;
+        int start_b = ((blockIdx.x - lora_block_start) / LORA_BLOCKS_R) * splits_b;
         int end_b = start_b + splits_b;
         int stop_b = min(b, end_b);
 
-        int splits_m = max(16, m / LORA_BLOCKS_M);
-        int start_m = ((blockIdx.x - lora_block_start) % LORA_BLOCKS_M) * splits_m;
-        int end_m = start_m + splits_m;
-        int stop_m = min(m, end_m);
+        int splits_r = max(16, r / LORA_BLOCKS_R);
+        int start_r = ((blockIdx.x - lora_block_start) % LORA_BLOCKS_R) * splits_r;
+        int end_r = start_r + splits_r;
+        int stop_r = min(r, end_r);
 
         for (int col = start_b; col < stop_b; col+=WMMA_N) {
             // Fragments for A and x
@@ -104,31 +99,7 @@ __global__ void fused_concurrent_asymmetric_kernel(
 
                     mma_sync(frag_Ax_C, frag_Ax_A, frag_Ax_B, frag_Ax_C);
                 }
-                store_matrix_sync(shared_u + row, frag_Ax_C, r, mem_col_major);
-            }
-
-            // Compute v = Bu
-            for (int row = start_m; row < stop_m; row += WMMA_M) {
-                fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Bu_A;
-                fragment<matrix_b, WMMA_K, WMMA_N, WMMA_K, ElementInput, LayoutB> frag_Bu_B;
-                fill_fragment(frag_Bu_C, 0.0f);
-
-                for(int k = 0; k < r; k += WMMA_K){
-                    int b_row = row;
-                    int b_col = k;
-                    int u_row = k;
-                    int u_col = 0;
-
-                    const ElementInput* B_tile_ptr = B + b_col * m + b_row;
-                    const half* u_tile_ptr = shared_u + u_col * r + u_row;
-
-                    load_matrix_sync(frag_Bu_A, B_tile_ptr, m);
-                    load_matrix_sync(frag_Bu_B, u_tile_ptr, r);
-
-                    mma_sync(frag_Bu_C, frag_Bu_A, frag_Bu_B, frag_Bu_C);
-                }
-
-                store_matrix_sync(shared_tmp + col * m + row, frag_Bu_C, m, mem_col_major);
+                store_matrix_sync(shared_tmp + col * r + row, frag_Ax_C, r, mem_col_major);
             }
         }
     }
@@ -136,8 +107,29 @@ __global__ void fused_concurrent_asymmetric_kernel(
     grid.sync();
 
     if (blockIdx.x < lora_block_start) {
+        //load from rxb u intermediate
+        //and do Y = v + Bu
+        //for output Y mxb, m = row_start, b = col_start
+        //B is mxr
+        //so for (m, b) output tile, we need row m of B and column b of u
+        fragment<matrix_a, WMMA_M, WMMA_K, WMMA_K, ElementInput, LayoutA> frag_Bu_A;
+        fragment<matrix_b, WMMA_K, WMMA_N, WMMA_K, ElementInput, LayoutB> frag_Bu_B;
         fragment<accumulator, WMMA_M, WMMA_N, WMMA_K, ElementCompute> frag_Bu_C;
-        load_matrix_sync(frag_Bu_C, shared_tmp + col_start * m + row_start, m, mem_col_major);
+        fill_fragment(frag_Bu_C, 0.0f);
+        for(int k = 0; k < r; k += WMMA_K){
+            int b_row = row_start;
+            int b_col = k;
+            int u_row = k;
+            int u_col = col_start;
+
+            const ElementInput* B_tile_ptr = B + b_col * m + b_row;
+            const half* u_tile_ptr = shared_tmp + u_col * r + u_row;
+
+            load_matrix_sync(frag_Bu_A, B_tile_ptr, m);
+            load_matrix_sync(frag_Bu_B, u_tile_ptr, r);
+
+            mma_sync(frag_Bu_C, frag_Bu_A, frag_Bu_B, frag_Bu_C);
+        }
 
         // accumulate
         frag_Wx_C = frag_Wx_C + frag_Bu_C;
@@ -148,7 +140,7 @@ __global__ void fused_concurrent_asymmetric_kernel(
     }
 }
 
-void launch_fused_concurrent_asymmetric(
+void launch_fused_concurrent_ax(
     const __half* d_W, const __half* d_x,
     const __half* d_B, const __half* d_A,
     __half* d_Y, const Dimensions& dims, __half* d_tmp) {
@@ -159,19 +151,9 @@ void launch_fused_concurrent_asymmetric(
     int r = dims.size_r;
 
     int threads_per_block = 32;
-    int LORA_BLOCKS_M = 16;
+    int LORA_BLOCKS_R = (r + 15) / 16;
     int LORA_BLOCKS_B = (b + 15) / 16;
-    dim3 gridSize(m / WMMA_M * b / WMMA_N + LORA_BLOCKS_M*LORA_BLOCKS_B);
-    size_t shared_mem_size = r * WMMA_N * sizeof(half);
-
-    // Check shared memory size
-    int max_shared_mem_per_block;
-    cudaDeviceGetAttribute(&max_shared_mem_per_block, cudaDevAttrMaxSharedMemoryPerBlock, 0);
-
-    if(shared_mem_size > static_cast<size_t>(max_shared_mem_per_block)){
-        std::cerr << "Shared memory per block exceeds the maximum limit." << std::endl;
-        exit(EXIT_FAILURE);
-    }
+    dim3 gridSize(m / WMMA_M * b / WMMA_N + LORA_BLOCKS_R*LORA_BLOCKS_B);
 
     void* kernelArgs[] = {
         &d_W,
@@ -181,16 +163,15 @@ void launch_fused_concurrent_asymmetric(
         &d_Y,
         &m, &n, &b, &r,
         &d_tmp,
-        &LORA_BLOCKS_M,
+        &LORA_BLOCKS_R,
         &LORA_BLOCKS_B
     };
 
     cudaError_t err = cudaLaunchCooperativeKernel(
-        (void*)fused_concurrent_asymmetric_kernel,
+        (void*)fused_concurrent_ax_kernel,
         gridSize,
         threads_per_block,
-        kernelArgs,
-        shared_mem_size
+        kernelArgs
     );
 
     // Check for errors
@@ -201,4 +182,4 @@ void launch_fused_concurrent_asymmetric(
 
 }
 
-} // namespace fused_concurrent_asymmetric
+} // namespace fused_concurrent_ax

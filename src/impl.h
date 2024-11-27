@@ -47,6 +47,18 @@ namespace fused_concurrent_asymmetric {
     );
 }
 
+namespace fused_concurrent_ax {
+    void launch_fused_concurrent_ax(
+        const __half* d_W,
+        const __half* d_x,
+        const __half* d_B,
+        const __half* d_A,
+        __half* d_y,
+        const Dimensions& dims,
+        __half* d_tmp
+    );
+}
+
 //////////////////////////////////////////
 // TODO ADD IMPLEMENTATION STRUCTS HERE //
 //////////////////////////////////////////
@@ -105,3 +117,20 @@ struct FusedConcurrentAsymmetric {
     }
 
 };
+
+struct FusedConcurrentAx {
+    constexpr static char const* name = "fused_concurrent_ax";
+
+    static void run(const __half* d_W, const __half* d_x, const __half* d_B, const __half* d_A,
+                    __half* d_y, const Dimensions& dims, void* workspace = nullptr) {
+        fused_concurrent_ax::launch_fused_concurrent_ax(d_W, d_x, d_B, d_A, d_y, dims, reinterpret_cast<__half*>(workspace));
+    }
+
+    static int get_workspace_size(int m, int d, int b, int r) {
+        return r * b * sizeof(half);
+    }
+
+};
+
+
+
